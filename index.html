@@ -239,12 +239,14 @@
   }
   ul.checklist li.ok{color:var(--ink);}
   ul.checklist li.missing{color:var(--warn); font-weight:700;}
-  .badge-ok, .badge-missing{
+  ul.checklist li.recommend{color:#6B5FB5; font-weight:600; font-size:13.5px; line-height:1.4;}
+  .badge-ok, .badge-missing, .badge-recommend{
     display:inline-flex; align-items:center; justify-content:center;
     width:19px; height:19px; border-radius:50%; font-size:11px; flex:none; color:#fff; font-weight:800;
   }
   .badge-ok{background:var(--green-darker);}
   .badge-missing{background:var(--warn);}
+  .badge-recommend{background:#8B7FD6;}
   .extra-sections{position:relative; z-index:1; font-size:13px; color:var(--muted); margin-top:12px; padding-top:12px; border-top:1px solid var(--border-soft);}
 
   /* ---------- options ---------- */
@@ -491,6 +493,14 @@
                   сохраняются дословно, как в системе. Переписывается только связность и стиль текста.</div>
               </label>
             </div>
+            <div class="checkbox-row" style="margin-left:-12px;">
+              <input type="checkbox" id="optBusinessCaseDraft" checked>
+              <label for="optBusinessCaseDraft" class="cb-text">
+                <div class="cb-title">Дописать «Бизнес-кейс», если отсутствует</div>
+                <div class="cb-desc">Claude составит его по остальным разделам задачи (не выдумывая
+                  новых фактов) и пометит как черновик — проверьте перед отправкой заказчику.</div>
+              </label>
+            </div>
             <div class="field" style="margin-top:6px;">
               <label class="field-label">Какие разделы переписывать</label>
               <div class="chip-select" id="rewriteSections"></div>
@@ -513,6 +523,15 @@
               <div class="cb-title">Показывать скриншоты из задачи</div>
               <div class="cb-desc">Загрузите файлы ниже — агент сам вставит их в нужные места
                 документа. Не загрузили — останется заметная плашка-подсказка вместо картинки.</div>
+            </label>
+          </div>
+
+          <div class="checkbox-row">
+            <input type="checkbox" id="optGrooming" checked>
+            <label for="optGrooming" class="cb-text">
+              <div class="cb-title">Показывать заметки про грумминг</div>
+              <div class="cb-desc">Вопросы на грумминг выделяются отдельной цветной выноской, даже
+                если написаны посреди обычного текста. Упоминания внутри ячеек таблиц не скрываются.</div>
             </label>
           </div>
 
@@ -619,16 +638,68 @@ function isTrackerExport(doc){
   return !!doc.getElementById("descriptionArea");
 }
 
+function extractCellLines(td){
+  // извлекает содержимое ячейки таблицы в виде списка строк (каждая —
+  // список ранов с сохранённым bold/italic). Раньше через textContent всё
+  // схлопывалось в одну строку без форматирования — если в ячейке
+  // несколько <p> (частое явление в таблицах критериев приёмки), каждый
+  // теперь становится отдельной строкой при рендере.
+  const paragraphs = Array.from(td.querySelectorAll(":scope > p"));
+  const nodes = paragraphs.length ? paragraphs : [td];
+  const lines = [];
+  for (const node of nodes) {
+    const rawRuns = extractRuns(node).filter(r => !r._image); // картинки собираются отдельно через imagesFromTable
+    const runs = mergeRuns(rawRuns);
+    if (runs.length) lines.push(runs);
+  }
+  return lines;
+}
+
+function cellFromTag(td){
+  const lines = extractCellLines(td);
+  const plain = lines.map(line => line.map(r => r.text).join("")).join("\n");
+  return { text: plain, lines };
+}
+
+function plainCell(text){
+  text = text || "";
+  const lines = text ? [mergeRuns([{ text, bold: false, italic: false }])] : [];
+  return { text, lines };
+}
+
+function imagesFromTable(table){
+  // картинки внутри ячеек таблицы (например, скриншот прямо в строке
+  // Given/When/Then) раньше молча терялись — textContent их не видит.
+  // Собираем отдельно, с контекстом (текст всей строки), чтобы показать
+  // после таблицы как отдельные слоты для вставки.
+  const images = [];
+  for (const tr of table.querySelectorAll("tr")) {
+    const cellsText = Array.from(tr.querySelectorAll("td, th")).map(td => clean(td.textContent)).join(" | ");
+    for (const img of tr.querySelectorAll("img")) {
+      const block = imageBlockFromNode(img);
+      if (!block) continue;
+      let context = cellsText;
+      if (context.length > 140) context = context.slice(0, 140).trim() + "…";
+      images.push({ ...block, context });
+    }
+  }
+  return images;
+}
+
 function tableToBlock(table){
   const rows = [];
   for (const tr of table.querySelectorAll("tr")) {
-    const cells = Array.from(tr.querySelectorAll("td, th")).map(td => clean(td.textContent));
-    if (cells.some(c => c)) rows.push(cells);
+    const cells = Array.from(tr.querySelectorAll("td, th")).map(td => cellFromTag(td));
+    if (cells.some(c => c.text)) rows.push(cells);
   }
   if (rows.length === 0) return null;
   const header = rows[0], body = rows.slice(1);
-  if (body.length === 0) return { type: "table", header: null, rows: [header] };
-  return { type: "table", header, rows: body };
+  const images = imagesFromTable(table);
+  const result = body.length === 0
+    ? { type: "table", header: null, rows: [header] }
+    : { type: "table", header, rows: body };
+  if (images.length) result.images = images;
+  return result;
 }
 
 let CURRENT_BASE_URL = null;
@@ -784,18 +855,69 @@ function listToBlocks(listEl, ordered, level){
   return blocks;
 }
 
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+|(?=\()/;
+
+function splitSentences(text){
+  return text.split(SENTENCE_SPLIT_RE).filter(s => s.trim());
+}
+
+function extractGroomingFromText(text){
+  // разбивает текст на предложения (эвристика по точке/?/!), отделяет
+  // предложения с упоминанием груминга от остальных
+  const sentences = splitSentences(text);
+  if (sentences.length <= 1) return { cleaned: text, extracted: [] };
+  const kept = [], extracted = [];
+  for (const s of sentences) {
+    (GROOMING_TRIGGER_RE.test(s) ? extracted : kept).push(s.trim());
+  }
+  return { cleaned: kept.join(" ").trim(), extracted };
+}
+
+function extractGroomingBlocks(blocks){
+  // вопрос на груминг иногда пишут не отдельной строкой, а посреди
+  // длинного абзаца/пункта списка вперемешку с обычным текстом деталей
+  // реализации — разбиваем такие блоки на предложения: груминг-предложения
+  // выносятся отдельным блоком сразу после исходного (дальше уже
+  // существующая логика превращает такой блок в цветную выноску по тому
+  // же ключевому слову), обычный текст остаётся на месте очищенным
+  const newBlocks = [];
+  for (const b of blocks) {
+    const text = b.text || "";
+    if (["paragraph", "bullet", "number"].includes(b.type) && text && GROOMING_TRIGGER_RE.test(text)) {
+      const { cleaned, extracted } = extractGroomingFromText(text);
+      if (extracted.length) {
+        if (cleaned) {
+          const newB = { ...b, text: cleaned };
+          delete newB.runs; // раны считаны для исходного текста, после обрезки уже не точны
+          newBlocks.push(newB);
+        }
+        newBlocks.push({ type: "paragraph", text: extracted.join(" ") });
+        continue;
+      }
+    }
+    newBlocks.push(b);
+  }
+  return newBlocks;
+}
+
 function humanizeCriteriaBlocks(blocks){
   return blocks.map(b => {
     if (b.type === "table" && b.header) {
-      const headerNorm = b.header.map(h => h.trim());
+      const headerNorm = b.header.map(c => c.text.trim());
       if (["Дано", "Когда", "Тогда"].every(k => headerNorm.includes(k))) {
         const idx = {};
         headerNorm.forEach((h, i) => { idx[h] = i; });
         const newRows = b.rows.map((row, i) => {
-          const get = col => (idx[col] !== undefined && row[idx[col]] !== undefined) ? row[idx[col]] : "";
-          return [String(i + 1), get("Дано"), get("Когда"), get("Тогда")];
+          const get = col => (idx[col] !== undefined && row[idx[col]] !== undefined) ? row[idx[col]] : plainCell("");
+          return [plainCell(String(i + 1)), get("Дано"), get("Когда"), get("Тогда")];
         });
-        return { type: "table", header: ["#", "Дано", "Когда", "Тогда"], rows: newRows };
+        const newTable = {
+          type: "table",
+          header: [plainCell("#"), plainCell("Дано"), plainCell("Когда"), plainCell("Тогда")],
+          rows: newRows,
+        };
+        if (b.images) newTable.images = b.images;
+        return newTable;
       }
     }
     return b;
@@ -863,13 +985,30 @@ function parseMetadata(doc){
   return metadata;
 }
 
+const BUSINESS_CASE_LABEL_RE = /^(бизнес-кейс|бизнес кейс)/i;
+
+function isBusinessCaseLabel(text){
+  // иногда "Бизнес-кейс" оформляют не заголовком, а сворачиваемым блоком
+  // (YFM <details><summary>Бизнес-кейс ...</summary>...</details>) — по
+  // виду как подпись/лейбл, а не заголовок раздела
+  const t = (text || "").trim();
+  return BUSINESS_CASE_LABEL_RE.test(t) && t.length <= 80;
+}
+
 function parseDescriptionSections(doc){
   const desc = doc.getElementById("descriptionArea");
   if (!desc) return [];
   const sections = [];
   let currentHeading = null;
   let currentBlocks = [];
-  function flush(){ if (currentHeading !== null) sections.push({ heading: currentHeading, content: currentBlocks }); }
+  let headingAlreadyEmitted = false; // чтобы не плодить пустой дубль-хвост после вынесенного бизнес-кейса
+  function flush(){
+    if (currentHeading !== null) {
+      if (headingAlreadyEmitted && !currentBlocks.length) return;
+      sections.push({ heading: currentHeading, content: currentBlocks });
+      headingAlreadyEmitted = true;
+    }
+  }
 
   for (const child of Array.from(desc.childNodes)) {
     if (child.nodeType !== 1) continue;
@@ -878,10 +1017,32 @@ function parseDescriptionSections(doc){
       flush();
       currentHeading = clean(child.textContent);
       currentBlocks = [];
-    } else {
-      if (currentHeading === null) { currentHeading = "Описание"; currentBlocks = []; }
-      currentBlocks.push(...renderBlocks(child));
+      headingAlreadyEmitted = false;
+      continue;
     }
+
+    if (name === "details") {
+      const summary = child.querySelector(":scope > summary");
+      const summaryText = summary ? clean(summary.textContent) : "";
+      if (isBusinessCaseLabel(summaryText)) {
+        // автор оформил "Бизнес-кейс" сворачиваемым блоком, а не заголовком —
+        // выносим его в отдельный раздел, а после закрытия details
+        // продолжаем текущий раздел как ни в чём не бывало
+        flush();
+        const bcBlocks = [];
+        for (const sub of Array.from(child.childNodes)) {
+          if (sub === summary) continue;
+          bcBlocks.push(...renderBlocks(sub));
+        }
+        sections.push({ heading: summaryText, content: bcBlocks });
+        currentBlocks = [];
+        headingAlreadyEmitted = true;
+        continue;
+      }
+    }
+
+    if (currentHeading === null) { currentHeading = "Описание"; currentBlocks = []; }
+    currentBlocks.push(...renderBlocks(child));
   }
   flush();
   return sections;
@@ -923,6 +1084,7 @@ function parseTrackerHtml(htmlString){
       if (sec.heading.toLowerCase().includes("риёмки")) {
         sec.content = humanizeCriteriaBlocks(sec.content);
       }
+      sec.content = extractGroomingBlocks(sec.content);
     }
   } finally {
     CURRENT_BASE_URL = null;
@@ -1042,7 +1204,7 @@ function splitSegments(blocks){
 // подсказки «Открыть в Claude», когда переписывание не срабатывает (страница
 // открыта не как артефакт — например, на GitHub Pages). Если оставить пустой
 // строкой, вместо ссылки будет просто текст ошибки.
-const ARTIFACT_URL = "https://claude.ai/public/artifacts/c75ab61b-7075-4744-9e24-85784a52ed83";
+const ARTIFACT_URL = "";
 
 async function callClaude(systemPrompt, userContent){
   // Вызов без API-ключа: работает, когда эта страница открыта как артефакт
@@ -1126,6 +1288,68 @@ async function rewriteSections(sections, opts){
   });
 }
 
+/* ---------------------------------------------------------------- Бизнес-кейс -- */
+
+function buildBusinessCaseDraftSystemPrompt(replaceTerminology){
+  const terminologyRule = replaceTerminology
+    ? '- Названия статусов, полей форм и бизнес-объектов системы можно при необходимости заменять более понятными формулировками, если это упрощает понимание — но не теряя однозначного соответствия с тем, что называется в системе (например можно пояснить исходное название в скобках).'
+    : '- НЕЛЬЗЯ переименовывать или перефразировать названия статусов, полей форм и бизнес-объектов системы — сохраняй их ДОСЛОВНО, даже если название кажется техническим.';
+  return `Ты помогаешь дополнить документ по задаче разработки, который готовится к отправке заказчику.
+
+В задаче нет отдельного раздела «Бизнес-кейс» — блока с объяснением, какую бизнес-функцию
+или ценность для заказчика закрывает эта задача. Твоя работа — СОСТАВИТЬ короткий бизнес-кейс
+(2–4 предложения), опираясь ИСКЛЮЧИТЕЛЬНО на факты, уже упомянутые в присланных материалах по
+задаче (потребность клиента, детали реализации, критерии приёмки и т.п., которые указаны ниже).
+Ничего не выдумывай сверх того, что там сказано — только свяжи уже известные факты в понятное
+объяснение «зачем это нужно бизнесу/заказчику».
+${terminologyRule}
+
+Если из присланного текста в принципе невозможно понять бизнес-ценность (например, там только
+сухая техническая информация без единого намёка на «зачем») — верни пустую строку, ничего не
+придумывай взамен.
+
+Верни ТОЛЬКО сам текст бизнес-кейса (без заголовка, без markdown-обёртки, без пояснений от себя)
+— просто 2–4 предложения связного текста на русском языке.`;
+}
+
+async function synthesizeBusinessCase(sections, opts){
+  opts = opts || {};
+  if (hasBusinessCaseSection(sections)) return sections; // уже есть, ничего не делаем
+
+  const contextParts = [];
+  for (const s of sections) {
+    const text = blocksToText((s.content || []).filter(b => b.type !== "table" && b.type !== "image"));
+    if (text.trim()) contextParts.push(`### ${s.heading}\n${text}`);
+  }
+  const context = contextParts.join("\n\n");
+  if (!context.trim()) return sections; // нечего анализировать
+
+  const raw = await callClaude(buildBusinessCaseDraftSystemPrompt(!!opts.replaceTerminology), context);
+  const textOut = raw.trim();
+  if (!textOut) return sections;
+
+  const noteText = "✍️ Черновик — составлен автоматически по остальным разделам задачи, проверьте перед отправкой заказчику.";
+  const newSection = {
+    heading: "Бизнес-кейс",
+    content: [
+      ...textToBlocks(textOut),
+      { type: "paragraph", text: noteText, runs: [{ text: noteText, bold: false, italic: true }] },
+    ],
+  };
+
+  const result = [];
+  let inserted = false;
+  for (const s of sections) {
+    result.push(s);
+    if (!inserted && s.heading.trim().toLowerCase() === "потребность клиента") {
+      result.push(newSection);
+      inserted = true;
+    }
+  }
+  if (!inserted) result.unshift(newSection);
+  return result;
+}
+
 /* ============================================================
    3. СБОРКА .DOCX (docx.js)
    (зеркало builder.py — та же палитра, те же приёмы оформления)
@@ -1146,10 +1370,76 @@ const WARN_BORDER_HEX = "C0504D";
 const HEADING_FONT = "Calibri";
 const BODY_FONT = "Calibri";
 const CALLOUT_TRIGGER_RE = /^[^a-zA-Zа-яА-ЯёЁ]*(важно|внимание)[:!]?\s*$/i;
-const GROOMING_TRIGGER_RE = /грумминг/i;
+const GROOMING_TRIGGER_RE = /грум{1,2}инг/i;
+const CELL_SENTENCE_SPLIT_RE = /(?<=[.!?])\s+|(?=\()/;
+
+function splitCellGroomingRuns(text){
+  // для ячейки таблицы: режет текст на куски (предложения) и помечает,
+  // какие из них — вопрос на грумминг. Текст из ячейки никуда не выносится
+  // (таблица не резиновая), только точечно подсвечивается нужный кусок.
+  // Вопрос на грумминг часто пишут в скобках одним заходом, но с несколькими
+  // предложениями внутри — отслеживаем баланс скобок, чтобы не разрезать
+  // такой вопрос пополам.
+  if (!GROOMING_TRIGGER_RE.test(text)) return [[text, false]];
+  const sentences = text.split(CELL_SENTENCE_SPLIT_RE).filter(s => s.trim());
+  if (sentences.length <= 1) return [[text, true]];
+
+  const runs = [];
+  let parenDepth = 0;
+  let insideGroomingParens = false;
+  for (const s of sentences) {
+    let isG = GROOMING_TRIGGER_RE.test(s) || insideGroomingParens;
+    const opens = (s.match(/\(/g) || []).length;
+    const closes = (s.match(/\)/g) || []).length;
+    if (isG && !insideGroomingParens && opens > closes) insideGroomingParens = true;
+    parenDepth = Math.max(0, parenDepth + opens - closes);
+    if (insideGroomingParens && parenDepth === 0) insideGroomingParens = false;
+    if (runs.length && runs[runs.length - 1][1] === isG) {
+      runs[runs.length - 1][0] += " " + s;
+    } else {
+      runs.push([s, isG]);
+    }
+  }
+  return runs;
+}
+
 const GROOMING_BG_HEX = "EAF1FB";
 const GROOMING_BORDER_HEX = "2E6FBE";
 const GROOMING_TEXT_COLOR = "1D4E8C";
+const BUSINESS_CASE_BG_HEX = "F1EFFC";
+const BUSINESS_CASE_BORDER_HEX = "8B7FD6";
+const BUSINESS_CASE_TEXT_COLOR = "4A3F91";
+const BUSINESS_CASE_HEADINGS = ["бизнес-кейс", "бизнес кейс"];
+
+function isBusinessCaseHeading(heading){
+  const h = (heading || "").trim().toLowerCase();
+  return BUSINESS_CASE_HEADINGS.some(alias => h.includes(alias));
+}
+
+function hasBusinessCaseSection(sections){
+  return sections.some(s => isBusinessCaseHeading(s.heading));
+}
+
+function hasGroomingMentions(sections){
+  // ищет упоминания где угодно — и в обычных блоках (после
+  // extractGroomingBlocks они уже выделены отдельными параграфами), и
+  // внутри ячеек таблиц (там мы их не вычищаем — для индикатора "есть
+  // упоминания" таблицы тоже должны учитываться)
+  for (const s of sections) {
+    for (const b of (s.content || [])) {
+      if (["paragraph", "bullet", "number"].includes(b.type) && GROOMING_TRIGGER_RE.test(b.text || "")) return true;
+      if (b.type === "table") {
+        const rows = (b.header ? [b.header] : []).concat(b.rows || []);
+        for (const row of rows) {
+          for (const cell of row) {
+            if (GROOMING_TRIGGER_RE.test(String(cell))) return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
 const DEFAULT_EXCLUDED = ["Техническая реализация"];
 
 // Заголовки разделов, которые в клиентском документе показываются под другим,
@@ -1171,6 +1461,29 @@ function thinBorders(colorHex, size){
   return { top: b, bottom: b, left: b, right: b };
 }
 
+function buildCellLineRuns(lineRuns){
+  // lineRuns: список {'text','bold','italic'} одной строки ячейки.
+  // Если строка содержит вопрос на грумминг — подсвечивает нужный
+  // фрагмент (та же логика, что и раньше), но тогда исходный bold/italic
+  // именно этой строки не сохраняется — редкое пересечение двух разных
+  // типов выделения, приоритет отдаётся видимости вопроса на грумминг.
+  const plain = lineRuns.map(r => r.text).join("");
+  if (GROOMING_TRIGGER_RE.test(plain)) {
+    return splitCellGroomingRuns(plain).map(([chunk, isG]) => new docx.TextRun({
+      text: chunk,
+      size: 21,
+      font: BODY_FONT,
+      bold: isG || undefined,
+      color: isG ? GROOMING_TEXT_COLOR : undefined,
+      shading: isG ? { type: docx.ShadingType.CLEAR, fill: GROOMING_BG_HEX } : undefined,
+    }));
+  }
+  return lineRuns.map(r => new docx.TextRun({
+    text: r.text, size: 21, font: BODY_FONT,
+    bold: r.bold || undefined, italics: r.italic || undefined,
+  }));
+}
+
 function buildTableBlock(block){
   const header = block.header;
   const rows = block.rows || [];
@@ -1181,12 +1494,12 @@ function buildTableBlock(block){
   const tableRows = [];
 
   if (header) {
-    const cells = header.map(text => new docx.TableCell({
+    const cells = header.map(cellData => new docx.TableCell({
       width: { size: colWidth, type: docx.WidthType.PERCENTAGE },
       shading: { type: docx.ShadingType.CLEAR, fill: TABLE_HEADER_HEX },
       borders: thinBorders(ACCENT_HEX, 4),
       margins: { top: 80, bottom: 80, left: 140, right: 140 },
-      children: [new docx.Paragraph({ children: [new docx.TextRun({ text: String(text), bold: true, size: 21, font: BODY_FONT, color: "FFFFFF" })] })],
+      children: [new docx.Paragraph({ children: [new docx.TextRun({ text: cellData.text || "", bold: true, size: 21, font: BODY_FONT, color: "FFFFFF" })] })],
     }));
     tableRows.push(new docx.TableRow({ children: cells, tableHeader: true }));
   }
@@ -1194,13 +1507,22 @@ function buildTableBlock(block){
   rows.forEach((row, i) => {
     const cells = [];
     for (let j = 0; j < nCols; j++) {
-      const text = row[j] !== undefined ? String(row[j]) : "";
+      const cellData = row[j] || { text: "", lines: [] };
+      const lines = cellData.lines && cellData.lines.length
+        ? cellData.lines
+        : (cellData.text ? [[{ text: cellData.text, bold: false, italic: false }]] : []);
+      const paragraphs = lines.length
+        ? lines.map((lineRuns, li) => new docx.Paragraph({
+            children: buildCellLineRuns(lineRuns),
+            spacing: { after: li === lines.length - 1 ? 40 : 20 },
+          }))
+        : [new docx.Paragraph({ children: [] })];
       cells.push(new docx.TableCell({
         width: { size: colWidth, type: docx.WidthType.PERCENTAGE },
         shading: { type: docx.ShadingType.CLEAR, fill: (i % 2 === 1) ? ALT_ROW_HEX : "FFFFFF" },
         borders: thinBorders(BORDER_HEX, 3),
         margins: { top: 80, bottom: 80, left: 140, right: 140 },
-        children: [new docx.Paragraph({ children: [new docx.TextRun({ text, size: 21, font: BODY_FONT })], spacing: { after: 40 } })],
+        children: paragraphs,
       }));
     }
     tableRows.push(new docx.TableRow({ children: cells }));
@@ -1254,10 +1576,55 @@ function buildSectionHeading(text, colorHex, textColor){
   });
 }
 
-function buildImagePlaceholderBlock(block){
-  // запасной вариант (картинка не загружена пользователем) — надёжная
-  // плашка-слот с контекстом, работает идентично CLI-версии
+function businessCaseBoxProps(){
+  return {
+    shading: { type: docx.ShadingType.CLEAR, fill: BUSINESS_CASE_BG_HEX },
+    border: { left: { style: docx.BorderStyle.SINGLE, size: 18, color: BUSINESS_CASE_BORDER_HEX, space: 10 } },
+    indent: { left: 90 },
+  };
+}
+
+function buildImagePlaceholderBlock(block, boxed){
   const label = block.alt || "Скриншот";
+  if (boxed) {
+    // внутри "Бизнес-кейса" — не серая пунктирная таблица, а обычные
+    // параграфы с той же фиолетовой заливкой+рамкой, что у остального
+    // текста раздела, чтобы картинка не выпадала из общего блока
+    const paras = [
+      new docx.Paragraph({
+        children: [new docx.TextRun({ text: `📷 Место для скриншота: ${label}`, bold: true, font: BODY_FONT, size: 21, color: MUTED_HEX })],
+        ...businessCaseBoxProps(), spacing: { after: 60 },
+      }),
+      new docx.Paragraph({
+        children: [new docx.TextRun({
+          text: "Загрузите изображение в шаге «Скриншоты» слева, и оно окажется здесь автоматически.",
+          italics: true, font: BODY_FONT, size: 19, color: MUTED_HEX,
+        })],
+        ...businessCaseBoxProps(), spacing: { after: (block.context || block.url) ? 60 : 160 },
+      }),
+    ];
+    if (block.context) {
+      paras.push(new docx.Paragraph({
+        children: [new docx.TextRun({ text: `Из строки таблицы: «${block.context}»`, italics: true, font: BODY_FONT, size: 17, color: MUTED_HEX })],
+        ...businessCaseBoxProps(), spacing: { after: block.url ? 60 : 160 },
+      }));
+    }
+    if (block.url) {
+      paras.push(new docx.Paragraph({
+        children: [
+          new docx.TextRun({ text: "Оригинал в задаче: ", font: BODY_FONT, size: 19, color: MUTED_HEX }),
+          new docx.ExternalHyperlink({
+            link: block.url,
+            children: [new docx.TextRun({ text: "открыть в Tracker", size: 19, font: BODY_FONT, color: RULE_HEX, underline: {} })],
+          }),
+        ],
+        ...businessCaseBoxProps(), spacing: { after: 160 },
+      }));
+    }
+    return paras;
+  }
+  // запасной вариант вне бизнес-кейса (картинка не загружена пользователем)
+  // — надёжная плашка-слот с контекстом, работает идентично CLI-версии
   const cellChildren = [
     new docx.Paragraph({
       children: [new docx.TextRun({ text: `📷 Место для скриншота: ${label}`, bold: true, font: BODY_FONT, size: 21, color: MUTED_HEX })],
@@ -1269,6 +1636,11 @@ function buildImagePlaceholderBlock(block){
       })],
     }),
   ];
+  if (block.context) {
+    cellChildren.push(new docx.Paragraph({
+      children: [new docx.TextRun({ text: `Из строки таблицы: «${block.context}»`, italics: true, font: BODY_FONT, size: 17, color: MUTED_HEX })],
+    }));
+  }
   if (block.url) {
     cellChildren.push(new docx.Paragraph({
       children: [
@@ -1291,7 +1663,7 @@ function buildImagePlaceholderBlock(block){
   return [table, new docx.Paragraph({ spacing: { after: 120 } })];
 }
 
-function buildImageBlock(block, uploadedImages){
+function buildImageBlock(block, uploadedImages, boxed){
   const uploaded = uploadedImages && uploadedImages[block.id];
   if (uploaded) {
     const maxWidthPx = 580;
@@ -1301,14 +1673,59 @@ function buildImageBlock(block, uploadedImages){
       new docx.Paragraph({
         children: [new docx.ImageRun({ data: uploaded.data, transformation: { width: w, height: h }, type: uploaded.type })],
         spacing: { after: 40 },
+        ...(boxed ? businessCaseBoxProps() : {}),
       }),
       new docx.Paragraph({
         children: [new docx.TextRun({ text: block.alt || "Скриншот", italics: true, font: BODY_FONT, size: 18, color: MUTED_HEX })],
         spacing: { after: 160 },
+        ...(boxed ? businessCaseBoxProps() : {}),
       }),
     ];
   }
-  return buildImagePlaceholderBlock(block);
+  return buildImagePlaceholderBlock(block, boxed);
+}
+
+function buildBusinessCaseBlocks(blocks, uploadedImages){
+  // Бизнес-кейс — самое важное для заказчика ("зачем это нужно бизнесу"),
+  // поэтому весь раздел визуально выделяется: каждый абзац получает мягкую
+  // заливку и акцентную полосу слева, как непрерывная выноска. У пунктов
+  // списка — только заливка (без левой границы), иначе граница съезжает
+  // из-за встроенного отступа стиля bullet/numbering.
+  const elements = [];
+  for (const block of blocks) {
+    if (block.type === "table") {
+      const t = buildTableBlock(block);
+      if (t) { elements.push(t); elements.push(new docx.Paragraph({ spacing: { after: 80 } })); }
+      for (const img of (block.images || [])) elements.push(...buildImageBlock(img, uploadedImages, true));
+      continue;
+    }
+    if (block.type === "image") {
+      elements.push(...buildImageBlock(block, uploadedImages, true));
+      continue;
+    }
+    if (block.type === "bullet" || block.type === "number") {
+      const runs = runsToTextRuns(block.runs || plainRuns(block.text), { size: 23 });
+      const p = new docx.Paragraph({
+        children: runs,
+        bullet: block.type === "bullet" ? { level: 0 } : undefined,
+        numbering: block.type === "number" ? { reference: "default-numbering", level: 0 } : undefined,
+        shading: { type: docx.ShadingType.CLEAR, fill: BUSINESS_CASE_BG_HEX },
+        spacing: { after: 60 },
+      });
+      elements.push(p);
+      continue;
+    }
+    const text = (block.text || "").trim();
+    if (!text) continue;
+    elements.push(new docx.Paragraph({
+      children: runsToTextRuns(block.runs || plainRuns(text), { size: 23 }),
+      shading: { type: docx.ShadingType.CLEAR, fill: BUSINESS_CASE_BG_HEX },
+      border: { left: { style: docx.BorderStyle.SINGLE, size: 18, color: BUSINESS_CASE_BORDER_HEX, space: 10 } },
+      indent: { left: 90 },
+      spacing: { after: 60 },
+    }));
+  }
+  return elements;
 }
 
 function buildContentBlocks(blocks, uploadedImages){
@@ -1321,6 +1738,7 @@ function buildContentBlocks(blocks, uploadedImages){
     if (block.type === "table") {
       const t = buildTableBlock(block);
       if (t) { elements.push(t); elements.push(new docx.Paragraph({ spacing: { after: 80 } })); }
+      for (const img of (block.images || [])) elements.push(...buildImageBlock(img, uploadedImages));
       i++; continue;
     }
 
@@ -1472,6 +1890,7 @@ async function buildDocxBlob(data, opts){
   const showScreenshots = opts.showScreenshots !== false; // по умолчанию true
   const screenshotsExcludedSections = opts.screenshotsExcludedSections || [];
   const uploadedImages = opts.uploadedImages || {};
+  const showGrooming = opts.showGrooming !== false; // по умолчанию true
 
   const clientTaskId = findClientTaskId(data.metadata || {}, clientTaskIdField);
   const key = data.key;
@@ -1496,18 +1915,40 @@ async function buildDocxBlob(data, opts){
   const screenshotsExcludedLower = new Set(screenshotsExcludedSections.map(s => s.toLowerCase()));
   for (const sec of data.sections) {
     if (excludedLower.has(sec.heading.toLowerCase())) continue;
-    children.push(buildSectionHeading(displayHeading(sec.heading)));
+    const isBusinessCase = isBusinessCaseHeading(sec.heading);
+    let headingText = displayHeading(sec.heading);
+    if (isBusinessCase) headingText = "💼 " + headingText;
+    children.push(buildSectionHeading(
+      headingText,
+      isBusinessCase ? BUSINESS_CASE_BORDER_HEX : undefined,
+      isBusinessCase ? BUSINESS_CASE_TEXT_COLOR : undefined,
+    ));
     const sectionShowsScreenshots = showScreenshots && !screenshotsExcludedLower.has(sec.heading.toLowerCase());
-    const sectionContent = sectionShowsScreenshots
+    let sectionContent = sectionShowsScreenshots
       ? (sec.content || [])
       : (sec.content || []).filter(b => b.type !== "image");
+    if (!showGrooming) {
+      sectionContent = sectionContent.filter(b =>
+        !(["paragraph", "bullet", "number"].includes(b.type) && GROOMING_TRIGGER_RE.test(b.text || "")));
+    }
     if (sectionContent.length) {
-      children.push(...buildContentBlocks(sectionContent, uploadedImages));
+      children.push(...(isBusinessCase
+        ? buildBusinessCaseBlocks(sectionContent, uploadedImages)
+        : buildContentBlocks(sectionContent, uploadedImages)));
     } else {
       children.push(new docx.Paragraph({
         children: [new docx.TextRun({ text: "Раздел присутствует в задаче, но не содержит текста.", italics: true, color: MUTED_HEX, font: BODY_FONT, size: 23 })],
       }));
     }
+  }
+
+  if (!hasBusinessCaseSection(data.sections)) {
+    children.push(buildCallout(
+      "❗ Рекомендация",
+      plainRuns("В задаче нет раздела «Бизнес-кейс» — рекомендуем добавить его в Трекере, чтобы " +
+        "заказчику было понятно, какую функцию или ценность для бизнеса закрывает эта задача."),
+      BUSINESS_CASE_BG_HEX, BUSINESS_CASE_BORDER_HEX, BUSINESS_CASE_TEXT_COLOR,
+    ));
   }
 
   if (missingRequired.length) {
@@ -1594,9 +2035,11 @@ const optRewrite = document.getElementById("optRewrite");
 const apiKeyBox = document.getElementById("apiKeyBox");
 const rewriteScopeBox = document.getElementById("rewriteScopeBox");
 const optRewriteTerminology = document.getElementById("optRewriteTerminology");
+const optBusinessCaseDraft = document.getElementById("optBusinessCaseDraft");
 const rewriteSectionsChips = document.getElementById("rewriteSections");
 const optTechnical = document.getElementById("optTechnical");
 const optScreenshots = document.getElementById("optScreenshots");
+const optGrooming = document.getElementById("optGrooming");
 const imageSlotsField = document.getElementById("imageSlotsField");
 const imageSlotsList = document.getElementById("imageSlotsList");
 const companyInput = document.getElementById("companyInput");
@@ -1628,7 +2071,9 @@ function collectImageSlots(parsed){
   const slots = [];
   for (const sec of parsed.sections) {
     const content = sec.content || [];
-    const imagesInSection = content.filter(b => b.type === "image").length;
+    const tableImages = content.filter(b => b.type === "table" && b.images && b.images.length)
+      .flatMap(b => b.images);
+    const imagesInSection = content.filter(b => b.type === "image").length + tableImages.length;
     let ordinal = 0;
     content.forEach((b, idx) => {
       if (b.type !== "image") return;
@@ -1663,6 +2108,15 @@ function collectImageSlots(parsed){
         ordinal, total: imagesInSection, context, contextSide,
       });
     });
+    // картинки, найденные внутри ячеек таблиц — контекст уже посчитан
+    // в imagesFromTable как содержимое всей строки таблицы
+    for (const img of tableImages) {
+      ordinal += 1;
+      slots.push({
+        id: img.id, heading: sec.heading, alt: img.alt, url: img.url,
+        ordinal, total: imagesInSection, context: img.context, contextSide: "row",
+      });
+    }
   }
   return slots;
 }
@@ -1703,7 +2157,7 @@ function renderImageSlots(slots){
   for (const slot of slots) {
     const ordinalLabel = slot.total > 1 ? ` · скриншот ${slot.ordinal} из ${slot.total}` : "";
     const contextLabel = slot.context
-      ? (slot.contextSide === "before" ? "После текста: " : "Перед текстом: ")
+      ? (slot.contextSide === "row" ? "Строка таблицы: " : slot.contextSide === "before" ? "После текста: " : "Перед текстом: ")
       : "";
     const row = document.createElement("div");
     row.className = "image-slot";
@@ -1834,6 +2288,12 @@ logoInput.addEventListener("change", async () => {
 function handleFile(file){
   state.fileName = file.name;
   filePillWrap.innerHTML = "";
+  // сбрасываем чипы разделов от предыдущего файла — иначе заголовки из
+  // старого файла остаются в списке вперемешку с новым (populateChipSelect
+  // только добавляет чипы, никогда не убирает устаревшие)
+  excludedSectionsChips.innerHTML = "";
+  rewriteSectionsChips.innerHTML = "";
+  populateChipSelect(excludedSectionsChips, COMMON_SECTIONS, DEFAULT_EXCLUDED_UI);
   const pill = document.createElement("span");
   pill.className = "filepill";
   pill.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> ${escapeHtml(file.name)} <button type="button" aria-label="Убрать файл">✕</button>`;
@@ -1875,6 +2335,9 @@ function resetFile(){
   logEl.innerHTML = "";
   downloadWrap.innerHTML = "";
   clientIdLine.classList.add("hidden");
+  excludedSectionsChips.innerHTML = "";
+  rewriteSectionsChips.innerHTML = "";
+  populateChipSelect(excludedSectionsChips, COMMON_SECTIONS, DEFAULT_EXCLUDED_UI);
 }
 
 function showParseError(msg){
@@ -1933,6 +2396,18 @@ function renderChecklist(parsed){
     const li = document.createElement("li");
     li.className = found ? "ok" : "missing";
     li.innerHTML = `<span class="${found ? "badge-ok" : "badge-missing"}">${found ? "✓" : "✕"}</span>${escapeHtml(r)}`;
+    checklist.appendChild(li);
+  }
+  if (!hasBusinessCaseSection(parsed.sections)) {
+    const li = document.createElement("li");
+    li.className = "recommend";
+    li.innerHTML = `<span class="badge-recommend">!</span>Рекомендуем добавить «Бизнес-кейс» — чтобы заказчику было понятно, какую ценность закрывает задача`;
+    checklist.appendChild(li);
+  }
+  if (hasGroomingMentions(parsed.sections)) {
+    const li = document.createElement("li");
+    li.className = "recommend";
+    li.innerHTML = `<span class="badge-recommend">!</span>В задаче есть упоминания груминга — выделены отдельной выноской в документе`;
     checklist.appendChild(li);
   }
   const extras = parsed.sections.map(s => s.heading).filter(h => !required.some(r => r.trim().toLowerCase() === h.trim().toLowerCase()));
@@ -1997,6 +2472,18 @@ generateBtn.addEventListener("click", async () => {
         });
         progressLine.remove();
         logLine("Текст переписан.", "success");
+
+        if (optBusinessCaseDraft.checked && !hasBusinessCaseSection(sections)) {
+          const bcProgress = logLine("Дописываю «Бизнес-кейс» по остальным материалам задачи…", "progress");
+          try {
+            sections = await synthesizeBusinessCase(sections, { replaceTerminology: optRewriteTerminology.checked });
+            bcProgress.remove();
+            logLine("«Бизнес-кейс» дописан (черновик, проверьте перед отправкой).", "success");
+          } catch (e) {
+            bcProgress.remove();
+            logLine("Не удалось дописать «Бизнес-кейс» (" + e.message + ") — собираю без него.", "error");
+          }
+        }
       } catch (e) {
         progressLine.remove();
         if (ARTIFACT_URL) {
@@ -2029,6 +2516,7 @@ generateBtn.addEventListener("click", async () => {
       clientTaskIdField,
       showScreenshots: optScreenshots.checked,
       uploadedImages: state.uploadedImages,
+      showGrooming: optGrooming.checked,
     });
     progressLine2.remove();
     logLine("Готово.", "success");
