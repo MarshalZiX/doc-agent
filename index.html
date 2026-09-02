@@ -1204,7 +1204,7 @@ function splitSegments(blocks){
 // подсказки «Открыть в Claude», когда переписывание не срабатывает (страница
 // открыта не как артефакт — например, на GitHub Pages). Если оставить пустой
 // строкой, вместо ссылки будет просто текст ошибки.
-const ARTIFACT_URL = "";
+const ARTIFACT_URL = "https://claude.ai/public/artifacts/08d7bf8f-dc39-41a0-b04f-c1c26ddd591f";
 
 async function callClaude(systemPrompt, userContent){
   // Вызов без API-ключа: работает, когда эта страница открыта как артефакт
