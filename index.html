@@ -475,15 +475,9 @@
             </label>
           </div>
           <div id="apiKeyBox" class="api-key-box hidden">
-            <div class="hint">
-              Ключ вводить не нужно. Эта страница — артефакт Claude: если открыть её прямо в Claude.ai
-              (или по ссылке, которой поделились через кнопку «Опубликовать» на артефакте), запрос к Claude
-              пройдёт через ваш собственный аккаунт claude.ai — без ключей и оплаты за API отдельно от подписки.<br><br>
-              Если этот файл скачан и открыт отдельно (не как артефакт Claude, например file:// или на своём
-              сервере) — переписывание работать не будет, а остальные функции (разбор задачи и сборка .docx)
-              продолжат работать как обычно.
-            </div>
+            <div class="hint" id="apiKeyBoxText">Проверяю доступность Claude…</div>
           </div>
+          <div id="artifactCtaInline" class="artifact-cta hidden" style="margin-bottom:14px;"></div>
           <div id="rewriteScopeBox" class="hidden" style="margin:2px 0 14px 44px;">
             <div class="checkbox-row" style="margin-left:-12px;">
               <input type="checkbox" id="optRewriteTerminology">
@@ -2254,9 +2248,67 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files[0]) handleFile(fileInput.files[0]);
 });
 
-optRewrite.addEventListener("change", () => {
-  apiKeyBox.classList.toggle("hidden", !optRewrite.checked);
+async function checkArtifactAvailability(){
+  // лёгкий пробный вызов (1 токен ответа), только чтобы понять, доступен
+  // ли Claude без ключа в этом окружении — не для реального переписывания
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1,
+        messages: [{ role: "user", content: "ping" }],
+      }),
+    });
+    return resp.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+const apiKeyBoxText = document.getElementById("apiKeyBoxText");
+const artifactCtaInline = document.getElementById("artifactCtaInline");
+
+function renderArtifactCta(container){
+  if (ARTIFACT_URL) {
+    container.innerHTML =
+      "Переписывание здесь не работает — эта страница открыта не как артефакт Claude. " +
+      "Откройте ту же задачу в артефакте, там оно работает без ключей через ваш аккаунт claude.ai:" +
+      `<br><a class="artifact-link" href="${ARTIFACT_URL}" target="_blank" rel="noopener">Открыть в Claude →</a>`;
+  } else {
+    container.innerHTML =
+      "Переписывание здесь не работает — эта страница открыта не как артефакт Claude " +
+      "(работает только внутри Claude.ai или по опубликованной ссылке на артефакт).";
+  }
+}
+
+let rewriteAvailabilityChecked = false; // не гоняем пробный запрос повторно при каждом клике на чекбокс
+
+optRewrite.addEventListener("change", async () => {
   rewriteScopeBox.classList.toggle("hidden", !optRewrite.checked);
+  if (!optRewrite.checked) {
+    apiKeyBox.classList.add("hidden");
+    artifactCtaInline.classList.add("hidden");
+    return;
+  }
+
+  if (rewriteAvailabilityChecked) return; // уже проверяли в этой сессии — состояние не меняем
+
+  apiKeyBox.classList.remove("hidden");
+  artifactCtaInline.classList.add("hidden");
+  apiKeyBoxText.textContent = "Проверяю доступность Claude…";
+
+  const available = await checkArtifactAvailability();
+  rewriteAvailabilityChecked = true;
+
+  if (available) {
+    apiKeyBoxText.textContent = "Страница является артефактом Claude, запрос к Claude пройдёт через ваш собственный аккаунт claude.ai.";
+  } else {
+    apiKeyBox.classList.add("hidden");
+    renderArtifactCta(artifactCtaInline);
+    artifactCtaInline.classList.remove("hidden");
+  }
 });
 
 const logoPreview = document.getElementById("logoPreview");
@@ -2489,12 +2541,7 @@ generateBtn.addEventListener("click", async () => {
         if (ARTIFACT_URL) {
           const box = document.createElement("div");
           box.className = "artifact-cta";
-          box.innerHTML =
-            "Переписывание здесь не работает — эта страница открыта не как артефакт Claude " +
-            "(там оно работает без ключей через ваш аккаунт claude.ai). Собираю документ без " +
-            "переписывания, а текст можно переписать, открыв ту же задачу в артефакте:" +
-            `<br><a class="artifact-link" href="${ARTIFACT_URL}" target="_blank" rel="noopener">` +
-            "Открыть в Claude →</a>";
+          renderArtifactCta(box);
           logEl.appendChild(box);
         } else {
           logLine("Переписывание не удалось (" + e.message + ") — собираю без него.", "error");
