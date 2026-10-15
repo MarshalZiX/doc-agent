@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>doc-agent — задача из трекера → документ для заказчика</title>
 <style>
+  @import url("https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&family=Martian+Mono:wdth,wght@112.5,500&display=swap");
   /* Шрифты вшиты в файл (base64), чтобы инструмент работал полностью офлайн
      и не зависел от доступности fonts.googleapis.com в корпоративной сети —
      та же логика, что и fallback для docx.js ниже. */
@@ -49,35 +50,43 @@
   unicode-range:U+0400-04FF,U+0500-052F,U+2DE0-2DFF,U+A640-A69F,U+0000-00FF;
 }
   :root{
-    --ink:#0B1220;
-    --ink-soft:#141B2B;
-    --green:#4ADB55;
-    --green-dark:#1D6E28;
-    --green-darker:#215930;
-    --green-pill-bg:#DAFFDD;
-    --gray-pill-bg:#E7EAEE;
-    --amber:#C98A2B;
-    --amber-bg:#FFF6E8;
-    --amber-border:#E0A93B;
-    --teal:#2E9B8F;
-    --teal-bg:#E7F3F1;
-    --warn:#A62C2C;
-    --warn-bg:#FBEAEA;
-    --warn-border:#C0504D;
-    --card:#FFFFFF;
-    --navy-card:#141F2E;
-    --stat-cell:#262B33;
-    --border:#E7EAEE;
-    --border-soft:#F0F2F5;
-    --muted:#5B6472;
-    --muted-onDark:#9FB0C0;
-    --ok:#1D6E28;
-    --ok-bg:#EFFAF3;
+    /* Дизайн-система Skillaz «skillaz-typovye-shemy» (Claude Design) —
+       значения из tokens/colors.css и tokens/fonts.css. Единственный
+       акцент бренда — жёлтый sk-accent, и только для мелких маркеров
+       (полос, чипов, кружков); текст/ссылки держим на тёмно-синей шкале
+       sk-ink/sk-ink-2 — жёлтый текст нечитаем на белом. */
+    --ink:#09081E;            /* sk-ink */
+    --ink-soft:#394165;       /* sk-ink-2 */
+    --green:#FFC804;          /* sk-accent — единственный яркий акцент */
+    --green-dark:#394165;     /* sk-ink-2 — текст/ссылки поверх акцентных элементов */
+    --green-darker:#09081E;   /* sk-ink */
+    --green-pill-bg:#FFF3C4;  /* мягкий жёлтый — заливка акцентных пилюль/чипов */
+    --gray-pill-bg:#F4F5FA;   /* sk-surface-1 */
+    --amber:#09081E;          /* sk-ink — текст в "Важно" (жёлтый текст нечитаем) */
+    --amber-bg:#FFF8E1;       /* мягкий жёлтый фон "Важно" */
+    --amber-border:#FFC804;   /* sk-accent */
+    --teal:#394165;           /* sk-ink-2 */
+    --teal-bg:#F4F5FA;        /* sk-surface-1 */
+    --warn:#D93636;           /* sk-danger */
+    --warn-bg:#FCEBEB;        /* sk-danger-soft */
+    --warn-border:#D93636;    /* sk-danger */
+    --card:#FFFFFF;           /* sk-paper */
+    --navy-card:#141C34;
+    --stat-cell:#182142;
+    --border:#C9D0E5;         /* sk-line */
+    --border-soft:#E9ECF6;
+    --muted:#7A85A7;          /* sk-ink-3 */
+    --muted-onDark:#AEB6D9;
+    --ok:#09081E;             /* sk-ink — "найдено" без лишнего цвета, акцент только у ошибок */
+    --ok-bg:#F4F5FA;          /* sk-surface-1 */
+    --purple:#09081E;         /* sk-ink — рекомендации (было фиолетовым) */
+    --purple-soft:#394165;    /* sk-ink-2 */
     --radius:20px;
     --radius-sm:12px;
-    --shadow-card: 0 24px 48px -20px rgba(5,15,30,.35), 0 4px 10px -4px rgba(5,15,30,.15);
-    --shadow-sm: 0 1px 2px rgba(5,15,30,.06);
-    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --shadow-card: 0 24px 48px -20px rgba(5,8,20,.35), 0 4px 10px -4px rgba(5,8,20,.15);
+    --shadow-sm: 0 1px 2px rgba(5,8,20,.06);
+    --sans: "Onest", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Martian Mono", "SF Mono", ui-monospace, Consolas, monospace;
   }
   *{box-sizing:border-box;}
   html{font-size:16px;}
@@ -85,8 +94,8 @@
   body{
     min-height:100vh;
     background:
-      radial-gradient(900px 500px at 90% 0%, rgba(74,219,85,.08), transparent 60%),
-      linear-gradient(150deg, #1E5361 0%, #163C52 38%, #101E30 75%, #0C1622 100%);
+      radial-gradient(900px 500px at 90% 0%, rgba(255,200,4,.08), transparent 60%),
+      linear-gradient(150deg, #1B2440 0%, #141B31 38%, #0D1226 75%, #09081E 100%);
     color:var(--ink);
     font-family:var(--sans);
     font-size:15.5px;
@@ -95,10 +104,10 @@
     -moz-osx-font-smoothing:grayscale;
     text-rendering:optimizeLegibility;
   }
-  ::selection{background:#BEF0C3;}
+  ::selection{background:#FFE9A8;}
   a{color:var(--green-dark);}
   code{
-    background:#EEF2F5; border-radius:4px; padding:1px 5px; font-size:.92em;
+    background:#F8F9FC; border-radius:4px; padding:1px 5px; font-size:.92em;
     font-family:"SF Mono", ui-monospace, Consolas, monospace;
   }
 
@@ -107,7 +116,7 @@
   /* ---------- шапка / hero ---------- */
   .hero{
     position:relative; overflow:hidden;
-    background:linear-gradient(165deg, #FFFFFF, #F6F8FA);
+    background:linear-gradient(165deg, #FFFFFF, #F8F9FC);
     border-radius:var(--radius); padding:36px 36px 32px;
     box-shadow:var(--shadow-card);
     margin-bottom:28px;
@@ -162,7 +171,7 @@
   .step-marker{
     width:34px; height:34px; border-radius:50%; flex:none;
     background:rgba(255,255,255,.06); border:1.5px solid rgba(255,255,255,.28);
-    color:#C7D0DA; font-weight:800; font-size:14px; font-family:var(--sans);
+    color:#C9D0E5; font-weight:800; font-size:14px; font-family:var(--sans);
     display:flex; align-items:center; justify-content:center;
     transition:background .2s, border-color .2s, color .2s;
     backdrop-filter:blur(2px);
@@ -201,9 +210,9 @@
     border:1.5px dashed var(--border); border-radius:var(--radius-sm);
     padding:34px 24px; text-align:center; cursor:pointer;
     transition:border-color .15s, background .15s, transform .1s;
-    background:linear-gradient(180deg, #fff, #FBFCFD);
+    background:linear-gradient(180deg, #fff, #F8F9FC);
   }
-  #dropzone:hover{border-color:#B7E5BB;}
+  #dropzone:hover{border-color:#F2DD93;}
   #dropzone.drag{border-color:var(--green); background:var(--green-pill-bg); transform:scale(1.005);}
   #dropzone svg{width:30px; height:30px; color:var(--green-dark); margin-bottom:12px;}
   #dropzone .main{font-size:15px; font-weight:700; color:var(--ink);}
@@ -213,7 +222,7 @@
   .filepill{
     position:relative; z-index:1;
     display:inline-flex; align-items:center; gap:8px;
-    background:var(--green-pill-bg); border:1px solid #C3F2C6; border-radius:999px;
+    background:var(--green-pill-bg); border:1px solid #F6E6A6; border-radius:999px;
     padding:6px 8px 6px 14px; font-size:13.5px; color:var(--green-dark); font-weight:700;
   }
   .filepill svg{width:14px; height:14px; flex:none;}
@@ -239,14 +248,14 @@
   }
   ul.checklist li.ok{color:var(--ink);}
   ul.checklist li.missing{color:var(--warn); font-weight:700;}
-  ul.checklist li.recommend{color:#6B5FB5; font-weight:600; font-size:13.5px; line-height:1.4;}
+  ul.checklist li.recommend{color:#394165; font-weight:600; font-size:13.5px; line-height:1.4;}
   .badge-ok, .badge-missing, .badge-recommend{
     display:inline-flex; align-items:center; justify-content:center;
     width:19px; height:19px; border-radius:50%; font-size:11px; flex:none; color:#fff; font-weight:800;
   }
   .badge-ok{background:var(--green-darker);}
   .badge-missing{background:var(--warn);}
-  .badge-recommend{background:#8B7FD6;}
+  .badge-recommend{background:#09081E;}
   .extra-sections{position:relative; z-index:1; font-size:13px; color:var(--muted); margin-top:12px; padding-top:12px; border-top:1px solid var(--border-soft);}
 
   /* ---------- options ---------- */
@@ -268,7 +277,7 @@
   .field textarea{resize:vertical; min-height:64px;}
   .chip-select{
     display:flex; flex-wrap:wrap; gap:8px;
-    padding:10px; border:1px solid var(--border); border-radius:10px; background:#fbfcfc;
+    padding:10px; border:1px solid var(--border); border-radius:10px; background:#F8F9FC;
     min-height:20px;
   }
   .chip-select:empty::before{content:"Пока пусто — добавьте раздел ниже."; font-size:13px; color:var(--muted);}
@@ -278,7 +287,7 @@
     font-size:13.5px; font-weight:600; cursor:pointer; user-select:none;
     transition:background .12s, border-color .12s, color .12s, transform .06s;
   }
-  .chip:hover{border-color:#B7E5BB;}
+  .chip:hover{border-color:#F2DD93;}
   .chip:active{transform:scale(.97);}
   .chip.selected{background:var(--green-darker); border-color:var(--green-darker); color:#fff;}
   .chip.selected::before{content:"✓ "; font-weight:700;}
@@ -292,7 +301,7 @@
     display:flex; align-items:flex-start; gap:12px; padding:12px; margin:0 -12px 4px;
     border-radius:12px; transition:background .15s; cursor:pointer;
   }
-  .checkbox-row:hover{background:#F7FAF7;}
+  .checkbox-row:hover{background:#F8F9FC;}
   .checkbox-row input{margin-top:3px; width:16px; height:16px; accent-color:var(--green-dark); cursor:pointer;}
   .checkbox-row .cb-text{font-size:14.5px;}
   .checkbox-row .cb-text .cb-title{font-weight:700; color:var(--ink);}
@@ -312,9 +321,9 @@
     border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600;
     transition:border-color .15s, background .15s;
   }
-  .image-slot-upload:hover{border-color:#B7E5BB; background:#F7FDF7;}
+  .image-slot-upload:hover{border-color:#F2DD93; background:#F8F9FC;}
   .image-slot-upload.has-file{border-color:var(--green-darker); color:var(--green-darker); background:var(--green-pill-bg);}
-  .image-slot-preview{flex:none; width:40px; height:40px; border-radius:8px; overflow:hidden; background:#F2F4F6;}
+  .image-slot-preview{flex:none; width:40px; height:40px; border-radius:8px; overflow:hidden; background:#F8F9FC;}
   .image-slot-preview img{width:100%; height:100%; object-fit:cover; display:block;}
 
   details.advanced{position:relative; z-index:1; margin-top:10px;}
@@ -333,8 +342,8 @@
     border-radius:12px; padding:14px 16px; margin-top:6px;
   }
   .api-key-box .field-label{margin-bottom:8px;}
-  .api-key-box .hint{color:#7a5a1a;}
-  .api-key-box input{border-color:#EAD9AF !important;}
+  .api-key-box .hint{color:#09081E;}
+  .api-key-box input{border-color:#F2DD93 !important;}
 
   /* ---------- actions ---------- */
   button.primary{
@@ -344,15 +353,15 @@
     font-family:var(--sans); transition:background .15s, transform .1s, box-shadow .15s;
     box-shadow:0 2px 0 rgba(0,0,0,.08);
   }
-  button.primary:hover{background:#3FC94A; box-shadow:0 4px 14px -4px rgba(74,219,85,.6);}
+  button.primary:hover{background:#E6B400; box-shadow:0 4px 14px -4px rgba(74,219,85,.6);}
   button.primary:active{transform:translateY(1px);}
-  button.primary:disabled{background:#D6DBE0; color:#8B95A1; cursor:not-allowed; box-shadow:none;}
+  button.primary:disabled{background:#C9D0E5; color:#7A85A7; cursor:not-allowed; box-shadow:none;}
   button.secondary{
     background:#fff; border:1px solid var(--border); color:var(--ink);
     border-radius:10px; padding:10px 16px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:var(--sans);
     transition:border-color .15s, background .15s;
   }
-  button.secondary:hover{border-color:#B7E5BB; background:#F7FDF7;}
+  button.secondary:hover{border-color:#F2DD93; background:#F8F9FC;}
   button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible{
     outline:2px solid var(--green); outline-offset:2px;
   }
@@ -369,7 +378,7 @@
 
   .artifact-cta{
     margin-top:10px; padding:14px 16px; border-radius:12px; background:var(--amber-bg);
-    border:1px solid var(--amber-border); font-size:13.5px; color:#7a5a1a; line-height:1.55;
+    border:1px solid var(--amber-border); font-size:13.5px; color:#09081E; line-height:1.55;
   }
   .artifact-cta a.artifact-link{
     display:inline-flex; align-items:center; gap:6px; margin-top:10px;
@@ -377,11 +386,11 @@
     padding:9px 18px; border-radius:9px; font-size:13.5px; font-weight:700;
     transition:background .15s;
   }
-  .artifact-cta a.artifact-link:hover{background:#153F21;}
+  .artifact-cta a.artifact-link:hover{background:#09081E;}
 
   .download-box{
     position:relative; z-index:1;
-    margin-top:14px; padding:16px 18px; border-radius:14px; background:var(--ok-bg); border:1px solid #CFE9D8;
+    margin-top:14px; padding:16px 18px; border-radius:14px; background:var(--ok-bg); border:1px solid #FDF1D2;
     display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
     animation:cardIn .3s ease-out;
   }
@@ -391,7 +400,7 @@
     border-radius:10px; font-size:14px; font-weight:700; transition:background .15s;
     display:inline-flex; align-items:center; gap:6px;
   }
-  .download-box a.dl-link:hover{background:#153F21;}
+  .download-box a.dl-link:hover{background:#09081E;}
 
   footer.app-footer{margin-top:48px; font-size:12.5px; color:rgba(255,255,255,.55); text-align:center;}
   footer.app-footer a{color:rgba(255,255,255,.85);}
@@ -624,6 +633,15 @@ if (typeof docx === "undefined") {
 function clean(text){
   return (text || "").replace(/\s+/g, " ").trim();
 }
+function normalizeHeading(text){
+  // Нормализует заголовок раздела для СРАВНЕНИЯ (не для отображения) —
+  // зеркало tracker_parser.normalize_heading(). Раньше сравнение было
+  // точным (.trim().toLowerCase()), и расхождение в мелочи — "ё" вместо
+  // "е" (самая частая опечатка в русских заголовках), висящее двоеточие
+  // на конце — приводило к тому, что раздел, фактически присутствующий
+  // в задаче, помечался как "не найден".
+  return clean(text).toLowerCase().replace(/ё/g, "е").replace(/[:.]+$/, "").trim();
+}
 function stripLeadingEmoji(text){
   return (text || "").replace(/^[^a-zA-Zа-яА-ЯёЁ0-9]+/u, "").trim().toLowerCase();
 }
@@ -638,13 +656,35 @@ function extractCellLines(td){
   // схлопывалось в одну строку без форматирования — если в ячейке
   // несколько <p> (частое явление в таблицах критериев приёмки), каждый
   // теперь становится отдельной строкой при рендере.
-  const paragraphs = Array.from(td.querySelectorAll(":scope > p"));
-  const nodes = paragraphs.length ? paragraphs : [td];
+  //
+  // Раньше искались только ПРЯМЫЕ дочерние <p> (:scope > p). Если в ячейке
+  // был маркированный/нумерованный список (<ul>/<ol><li><p>...), его <p>
+  // лежат на уровень глубже — внутри <li> — поэтому ни одного прямого <p>
+  // не находилось, и вся ячейка целиком (список вместе с текстом) молча
+  // пропадала из документа. Теперь прямые <p> и пункты прямых <ul>/<ol>
+  // собираются вместе, по порядку, каждый пункт списка получает маркер
+  // ("• " / "1. "), чтобы не потерять сам факт перечисления.
+  const directBlocks = Array.from(td.children).filter(c => ["P", "UL", "OL"].includes(c.tagName));
   const lines = [];
-  for (const node of nodes) {
+  const addLine = (node, prefix) => {
     const rawRuns = extractRuns(node).filter(r => !r._image); // картинки собираются отдельно через imagesFromTable
-    const runs = mergeRuns(rawRuns);
-    if (runs.length) lines.push(runs);
+    let runs = mergeRuns(rawRuns);
+    if (!runs.length) return;
+    if (prefix) runs = [{ text: prefix, bold: false, italic: false }, ...runs];
+    lines.push(runs);
+  };
+  if (directBlocks.length) {
+    for (const block of directBlocks) {
+      if (block.tagName === "P") {
+        addLine(block);
+      } else {
+        const ordered = block.tagName === "OL";
+        const liItems = Array.from(block.children).filter(c => c.tagName === "LI");
+        liItems.forEach((li, i) => addLine(li, ordered ? `${i + 1}. ` : "• "));
+      }
+    }
+  } else {
+    addLine(td);
   }
   return lines;
 }
@@ -790,6 +830,18 @@ function renderBlocks(node){
     const img = imageBlockFromNode(node);
     return img ? [{ type: "image", ...img }] : [];
   }
+  if (name === "pre") {
+    // Блок кода (обычно внутри div.yfm-code-floating-container > pre > code.hljs,
+    // который YFM генерирует из тройных кавычек ```). Раньше <pre> не имел
+    // отдельного обработчика и проваливался в generic div-ветку ниже — а там
+    // paragraphBlock/mergeRuns схлопывает ЛЮБЫЕ пробелы и переносы строк
+    // в один пробел, так что JSON/код превращался в нечитаемую "простыню"
+    // в один абзац. textContent сохраняет переносы строк как есть — только
+    // обрезаем пустые строки по краям самого блока.
+    const codeNode = node.querySelector("code") || node;
+    const raw = (codeNode.textContent || "").replace(/^\n+|\n+$/g, "");
+    return raw.trim() ? [{ type: "code", text: raw }] : [];
+  }
 
   if (name === "details") {
     const summary = node.querySelector(":scope > summary");
@@ -865,6 +917,34 @@ function extractGroomingFromText(text){
     (GROOMING_TRIGGER_RE.test(s) ? extracted : kept).push(s.trim());
   }
   return { cleaned: kept.join(" ").trim(), extracted };
+}
+
+const CODE_LANG_RE = /^[a-zA-Z][a-zA-Z0-9+#_-]{0,15}$/;
+
+function mergeCodeLangLabels(blocks){
+  // Когда задачу пишут через ```json ... ```, YFM при экспорте в .doc
+  // рендерит имя языка отдельным текстовым абзацем прямо перед <pre><code>
+  // (тег языка не попадает внутрь <pre>). Переносим такой короткий абзац
+  // (без пробелов, сразу перед блоком кода) в подпись языка самого блока
+  // кода, а дублирующий параграф убираем.
+  const newBlocks = [];
+  let i = 0;
+  const n = blocks.length;
+  while (i < n) {
+    const b = blocks[i];
+    const next = blocks[i + 1];
+    if (
+      b.type === "paragraph" && next && next.type === "code" &&
+      CODE_LANG_RE.test((b.text || "").trim())
+    ) {
+      newBlocks.push({ ...next, lang: b.text.trim() });
+      i += 2;
+      continue;
+    }
+    newBlocks.push(b);
+    i += 1;
+  }
+  return newBlocks;
 }
 
 function extractGroomingBlocks(blocks){
@@ -1075,10 +1155,11 @@ function parseTrackerHtml(htmlString){
     metadata = parseMetadata(doc);
     sections = parseDescriptionSections(doc);
     for (const sec of sections) {
-      if (sec.heading.toLowerCase().includes("риёмки")) {
+      if (normalizeHeading(sec.heading).includes("риемки")) {
         sec.content = humanizeCriteriaBlocks(sec.content);
       }
       sec.content = extractGroomingBlocks(sec.content);
+      sec.content = mergeCodeLangLabels(sec.content);
     }
   } finally {
     CURRENT_BASE_URL = null;
@@ -1173,16 +1254,19 @@ function textToBlocks(text){
 }
 
 function splitSegments(blocks){
-  // режет блоки секции на чередующиеся сегменты: {kind:'table'|'image', block}
+  // режет блоки секции на чередующиеся сегменты: {kind:'table'|'image'|'code', block}
   // — остаются как есть, {kind:'text', blocks:[...]} — идут на переписывание.
   // Картинки принципиально нельзя пропускать через Claude как текст (у них
   // нет текстового содержимого) — раньше при попадании в текстовый сегмент
   // блок картинки вместе с её id стирался при переписывании, из-за чего
-  // терялась связь с уже загруженным пользователем файлом скриншота.
+  // терялась связь с уже загруженным пользователем файлом скриншота. Блок
+  // кода (JSON/запросы) по той же причине нельзя пускать через "перепиши
+  // деловым языком" — модель пересказала бы его прозой вместо дословного
+  // сохранения.
   const segments = [];
   let current = [];
   for (const b of blocks) {
-    if (b.type === "table" || b.type === "image") {
+    if (b.type === "table" || b.type === "image" || b.type === "code") {
       if (current.length) { segments.push({ kind: "text", blocks: current }); current = []; }
       segments.push({ kind: b.type, block: b });
     } else {
@@ -1198,7 +1282,7 @@ function splitSegments(blocks){
 // подсказки «Открыть в Claude», когда переписывание не срабатывает (страница
 // открыта не как артефакт — например, на GitHub Pages). Если оставить пустой
 // строкой, вместо ссылки будет просто текст ошибки.
-const ARTIFACT_URL = "https://claude.ai/public/artifacts/08d7bf8f-dc39-41a0-b04f-c1c26ddd591f";
+const ARTIFACT_URL = "";
 
 async function callClaude(systemPrompt, userContent){
   // Вызов без API-ключа: работает, когда эта страница открыта как артефакт
@@ -1231,7 +1315,7 @@ async function rewriteSections(sections, opts){
   opts = opts || {};
   const replaceTerminology = !!opts.replaceTerminology;
   const allowed = (opts.sectionsToRewrite && opts.sectionsToRewrite.length)
-    ? new Set(opts.sectionsToRewrite.map(h => h.trim().toLowerCase()))
+    ? new Set(opts.sectionsToRewrite.map(h => normalizeHeading(h)))
     : null;
 
   // таблицы (в первую очередь Given/When/Then из "Критерии приёмки") в
@@ -1243,7 +1327,7 @@ async function rewriteSections(sections, opts){
 
   const units = []; // { si, segi, heading, content }
   sectionSegments.forEach((segments, si) => {
-    if (allowed && !allowed.has(sections[si].heading.trim().toLowerCase())) return;
+    if (allowed && !allowed.has(normalizeHeading(sections[si].heading))) return;
     segments.forEach((seg, segi) => {
       if (seg.kind !== "text") return;
       const text = blocksToText(seg.blocks);
@@ -1312,7 +1396,7 @@ async function synthesizeBusinessCase(sections, opts){
 
   const contextParts = [];
   for (const s of sections) {
-    const text = blocksToText((s.content || []).filter(b => b.type !== "table" && b.type !== "image"));
+    const text = blocksToText((s.content || []).filter(b => b.type !== "table" && b.type !== "image" && b.type !== "code"));
     if (text.trim()) contextParts.push(`### ${s.heading}\n${text}`);
   }
   const context = contextParts.join("\n\n");
@@ -1335,7 +1419,7 @@ async function synthesizeBusinessCase(sections, opts){
   let inserted = false;
   for (const s of sections) {
     result.push(s);
-    if (!inserted && s.heading.trim().toLowerCase() === "потребность клиента") {
+    if (!inserted && normalizeHeading(s.heading) === "потребность клиента") {
       result.push(newSection);
       inserted = true;
     }
@@ -1349,20 +1433,29 @@ async function synthesizeBusinessCase(sections, opts){
    (зеркало builder.py — та же палитра, те же приёмы оформления)
    ============================================================ */
 
-const ACCENT_HEX = "1D6E28";
-const RULE_HEX = "2FA83D";
-const TITLE_BG_HEX = "EAF8EC";
-const TABLE_HEADER_HEX = "14261A";
-const MUTED_HEX = "5B6472";
-const BORDER_HEX = "DCE3E9";
-const ALT_ROW_HEX = "F3F9F4";
-const CALLOUT_BG_HEX = "FFF6E8";
-const CALLOUT_BORDER_HEX = "E0A93B";
-const WARN_HEX = "A62C2C";
-const WARN_BG_HEX = "FBEAEA";
-const WARN_BORDER_HEX = "C0504D";
-const HEADING_FONT = "Calibri";
-const BODY_FONT = "Calibri";
+// Дизайн-система Skillaz «skillaz-typovye-shemy» (Claude Design) — значения
+// из tokens/colors.css и tokens/fonts.css. Единственный акцент бренда —
+// жёлтый sk-accent, и он только для тонких полос/маркеров: текст и ссылки
+// держим на тёмно-синей шкале (sk-ink/sk-ink-2), жёлтый текст нечитаем на белом.
+const ACCENT_HEX = "09081E";        // sk-ink
+const RULE_HEX = "FFC804";          // sk-accent — тонкие акцентные полосы
+const LINK_HEX = "394165";          // sk-ink-2 — цвет ссылок
+const TITLE_BG_HEX = "E6EAF8";      // sk-surface-2
+const TABLE_HEADER_HEX = "09081E";  // sk-ink
+const MUTED_HEX = "7A85A7";         // sk-ink-3
+const BORDER_HEX = "C9D0E5";        // sk-line
+const ALT_ROW_HEX = "F8F9FC";       // sk-surface-0
+const CALLOUT_BG_HEX = "FFF8E1";
+const CALLOUT_BORDER_HEX = "FFC804";
+const WARN_HEX = "D93636";          // sk-danger
+const WARN_BG_HEX = "FCEBEB";       // sk-danger-soft
+const WARN_BORDER_HEX = "D93636";
+const CODE_FONT = "Consolas";
+const CODE_BG_HEX = "F8F9FC";       // sk-surface-0
+const CODE_BORDER_HEX = "C9D0E5";   // sk-line
+const CODE_TEXT_COLOR = "09081E";   // sk-ink
+const HEADING_FONT = "Onest";       // бренд-гарнитура Skillaz
+const BODY_FONT = "Onest";
 const CALLOUT_TRIGGER_RE = /^[^a-zA-Zа-яА-ЯёЁ]*(важно|внимание)[:!]?\s*$/i;
 const GROOMING_TRIGGER_RE = /грум{1,2}инг/i;
 const CELL_SENTENCE_SPLIT_RE = /(?<=[.!?])\s+|(?=\()/;
@@ -1443,7 +1536,7 @@ const DEFAULT_EXCLUDED = ["Техническая реализация"];
 // название, меняется только то, что видит заказчик в тексте документа.
 const HEADING_DISPLAY_OVERRIDES = { "потребность клиента": "Потребность заказчика" };
 function displayHeading(heading){
-  return HEADING_DISPLAY_OVERRIDES[heading.trim().toLowerCase()] || heading;
+  return HEADING_DISPLAY_OVERRIDES[normalizeHeading(heading)] || heading;
 }
 
 function noBorders(){
@@ -1525,6 +1618,36 @@ function buildTableBlock(block){
   return new docx.Table({ rows: tableRows, width: { size: 100, type: docx.WidthType.PERCENTAGE } });
 }
 
+function buildCodeBlock(block){
+  // Блок кода/JSON (из <pre><code> в экспорте Трекера) — моноширинный
+  // шрифт на светлой подложке в рамке со всех сторон (в отличие от
+  // callout'ов — те оформлены только левой полосой), с сохранением
+  // переносов строк и отступов. Зеркало builder.py::_add_code_block.
+  const text = block.text || "";
+  const lines = text ? text.split("\n") : [""];
+  const paragraphs = [];
+  if (block.lang) {
+    paragraphs.push(new docx.Paragraph({
+      children: [new docx.TextRun({ text: block.lang.toUpperCase(), bold: true, size: 17, font: BODY_FONT, color: MUTED_HEX })],
+      spacing: { after: 80 },
+    }));
+  }
+  lines.forEach((line, i) => {
+    paragraphs.push(new docx.Paragraph({
+      children: [new docx.TextRun({ text: line || " ", size: 19, font: CODE_FONT, color: CODE_TEXT_COLOR })],
+      spacing: { after: 0, line: 276, lineRule: "auto" },
+    }));
+  });
+  const cell = new docx.TableCell({
+    shading: { type: docx.ShadingType.CLEAR, fill: CODE_BG_HEX },
+    borders: thinBorders(CODE_BORDER_HEX, 4),
+    margins: { top: 140, bottom: 140, left: 200, right: 200 },
+    children: paragraphs,
+  });
+  const table = new docx.Table({ rows: [new docx.TableRow({ children: [cell] })], width: { size: 100, type: docx.WidthType.PERCENTAGE } });
+  return [table, new docx.Paragraph({ spacing: { after: 80 } })];
+}
+
 function plainRuns(text){
   return [{ text: text || "", bold: false, italic: false }];
 }
@@ -1544,7 +1667,7 @@ function runsToTextRuns(runsData, opts){
 function buildCallout(title, bodyRuns, bgHex, borderHex, titleColor){
   bgHex = bgHex || CALLOUT_BG_HEX;
   borderHex = borderHex || CALLOUT_BORDER_HEX;
-  titleColor = titleColor || "8A5A00";
+  titleColor = titleColor || ACCENT_HEX;
   const label = title.trim().replace(/[!:]+$/, "").trim() || "Важно";
   return new docx.Paragraph({
     shading: { type: docx.ShadingType.CLEAR, fill: bgHex },
@@ -1609,7 +1732,7 @@ function buildImagePlaceholderBlock(block, boxed){
           new docx.TextRun({ text: "Оригинал в задаче: ", font: BODY_FONT, size: 19, color: MUTED_HEX }),
           new docx.ExternalHyperlink({
             link: block.url,
-            children: [new docx.TextRun({ text: "открыть в Tracker", size: 19, font: BODY_FONT, color: RULE_HEX, underline: {} })],
+            children: [new docx.TextRun({ text: "открыть в Tracker", size: 19, font: BODY_FONT, color: LINK_HEX, underline: {} })],
           }),
         ],
         ...businessCaseBoxProps(), spacing: { after: 160 },
@@ -1641,7 +1764,7 @@ function buildImagePlaceholderBlock(block, boxed){
         new docx.TextRun({ text: "Оригинал в задаче: ", font: BODY_FONT, size: 19, color: MUTED_HEX }),
         new docx.ExternalHyperlink({
           link: block.url,
-          children: [new docx.TextRun({ text: "открыть в Tracker", size: 19, font: BODY_FONT, color: RULE_HEX, underline: {} })],
+          children: [new docx.TextRun({ text: "открыть в Tracker", size: 19, font: BODY_FONT, color: LINK_HEX, underline: {} })],
         }),
       ],
     }));
@@ -1697,6 +1820,10 @@ function buildBusinessCaseBlocks(blocks, uploadedImages){
       elements.push(...buildImageBlock(block, uploadedImages, true));
       continue;
     }
+    if (block.type === "code") {
+      elements.push(...buildCodeBlock(block));
+      continue;
+    }
     if (block.type === "bullet" || block.type === "number") {
       const runs = runsToTextRuns(block.runs || plainRuns(block.text), { size: 23 });
       const p = new docx.Paragraph({
@@ -1738,6 +1865,11 @@ function buildContentBlocks(blocks, uploadedImages){
 
     if (block.type === "image") {
       elements.push(...buildImageBlock(block, uploadedImages));
+      i++; continue;
+    }
+
+    if (block.type === "code") {
+      elements.push(...buildCodeBlock(block));
       i++; continue;
     }
 
@@ -1826,7 +1958,7 @@ function buildTitleBand(key, titleText, companyName, logoData, logoType, clientT
       cellChildren.push(new docx.Paragraph({
         children: [...runs, new docx.ExternalHyperlink({
           link: clientTaskId,
-          children: [new docx.TextRun({ text: clientTaskId, size: 21, font: BODY_FONT, color: RULE_HEX, underline: {} })],
+          children: [new docx.TextRun({ text: clientTaskId, size: 21, font: BODY_FONT, color: LINK_HEX, underline: {} })],
         })],
         spacing: { after: 40 },
       }));
@@ -1905,10 +2037,10 @@ async function buildDocxBlob(data, opts){
     children.push(new docx.Paragraph({ spacing: { after: 80 } }));
   }
 
-  const excludedLower = new Set(excludedSections.map(s => s.toLowerCase()));
-  const screenshotsExcludedLower = new Set(screenshotsExcludedSections.map(s => s.toLowerCase()));
+  const excludedLower = new Set(excludedSections.map(s => normalizeHeading(s)));
+  const screenshotsExcludedLower = new Set(screenshotsExcludedSections.map(s => normalizeHeading(s)));
   for (const sec of data.sections) {
-    if (excludedLower.has(sec.heading.toLowerCase())) continue;
+    if (excludedLower.has(normalizeHeading(sec.heading))) continue;
     const isBusinessCase = isBusinessCaseHeading(sec.heading);
     let headingText = displayHeading(sec.heading);
     if (isBusinessCase) headingText = "💼 " + headingText;
@@ -1917,7 +2049,7 @@ async function buildDocxBlob(data, opts){
       isBusinessCase ? BUSINESS_CASE_BORDER_HEX : undefined,
       isBusinessCase ? BUSINESS_CASE_TEXT_COLOR : undefined,
     ));
-    const sectionShowsScreenshots = showScreenshots && !screenshotsExcludedLower.has(sec.heading.toLowerCase());
+    const sectionShowsScreenshots = showScreenshots && !screenshotsExcludedLower.has(normalizeHeading(sec.heading));
     let sectionContent = sectionShowsScreenshots
       ? (sec.content || [])
       : (sec.content || []).filter(b => b.type !== "image");
@@ -2441,10 +2573,10 @@ function showReport(parsed){
 
 function renderChecklist(parsed){
   const required = getRequiredSections();
-  const foundHeadings = new Set(parsed.sections.map(s => s.heading.trim().toLowerCase()));
+  const foundHeadings = new Set(parsed.sections.map(s => normalizeHeading(s.heading)));
   checklist.innerHTML = "";
   for (const r of required) {
-    const found = foundHeadings.has(r.trim().toLowerCase());
+    const found = foundHeadings.has(normalizeHeading(r));
     const li = document.createElement("li");
     li.className = found ? "ok" : "missing";
     li.innerHTML = `<span class="${found ? "badge-ok" : "badge-missing"}">${found ? "✓" : "✕"}</span>${escapeHtml(r)}`;
@@ -2462,7 +2594,7 @@ function renderChecklist(parsed){
     li.innerHTML = `<span class="badge-recommend">!</span>В задаче есть упоминания груминга — выделены отдельной выноской в документе`;
     checklist.appendChild(li);
   }
-  const extras = parsed.sections.map(s => s.heading).filter(h => !required.some(r => r.trim().toLowerCase() === h.trim().toLowerCase()));
+  const extras = parsed.sections.map(s => s.heading).filter(h => !required.some(r => normalizeHeading(r) === normalizeHeading(h)));
   extraSections.textContent = extras.length ? `Доп. разделы в задаче: ${extras.join(", ")}` : "";
 }
 
@@ -2509,8 +2641,8 @@ generateBtn.addEventListener("click", async () => {
       ? []
       : getChipValues(excludedSectionsChips);
 
-    const foundHeadings = new Set(state.parsed.sections.map(s => s.heading.trim().toLowerCase()));
-    const missing = required.filter(r => !foundHeadings.has(r.trim().toLowerCase()));
+    const foundHeadings = new Set(state.parsed.sections.map(s => normalizeHeading(s.heading)));
+    const missing = required.filter(r => !foundHeadings.has(normalizeHeading(r)));
 
     let sections = state.parsed.sections;
 
